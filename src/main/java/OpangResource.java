@@ -6,6 +6,7 @@ import model.RequestBody;
 import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import rabbit.ManagerRabbitMQ;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
@@ -21,29 +22,24 @@ public class OpangResource {
     private static final String SERVICE_QUEUE = "serviceQueue";
     private static final String ORDER_PROCESS = "07301";
     private static final String BID_PROCESS = "07302";
-    private  Connection connection;
-    private Config configuration;
+    private DBConnection db;
     private CommonApp common;
+    private Channel mChannel;
 
-    public OpangResource(final ConnectionFactory connectionFactory, final Config configuration) {
+    public OpangResource(final Channel channel, final DBConnection dbConnection) {
         this.common = new CommonApp();
-        this.configuration = configuration;
-        try {
-            connection = connectionFactory.newConnection();
-            Channel channel = connection.createChannel();
+        this.mChannel = channel;
+        this.db = dbConnection;
 
-            //System.out.println(" [x] Awaiting requests");
-            LOG.info(" [x] Awaiting requests");
-
-            while (true) {
-                //consume serviceQueue
-                channel.exchangeDeclare(EXCHANGE_NAME, "topic", true);
-                channel.basicQos(1);
-                Consumer consumer = new DefaultConsumer(channel) {
+        LOG.info(" [*] WAITING REQUEST");
+        while(true){
+            try {
+                mChannel.exchangeDeclare(EXCHANGE_NAME, "topic", true);
+                mChannel.basicQos(1);
+                Consumer consumer = new DefaultConsumer(mChannel){
                     @Override
-                    public void handleDelivery(String consumerTag, Envelope envelope,
-                                               AMQP.BasicProperties properties, byte[] body) throws IOException {
-                        String message = new String(body, "UTF-8");
+                    public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
+                                                String message = new String(body, "UTF-8");
 
                         AMQP.BasicProperties replyProps = new AMQP.BasicProperties
                                 .Builder()
@@ -52,7 +48,6 @@ public class OpangResource {
                                 .type("callback")
                                 .build();
 
-                        //System.out.println("[*] Consume request : "+message);
                         LOG.info(" [*] CONSUME REQUEST : "+message);
                         RequestBody request = common.buildParams(message);
                         String response = "";
@@ -66,23 +61,21 @@ public class OpangResource {
                             default:
                                 break;
                         }
-
-                        channel.basicPublish( "", replyProps.getReplyTo(), replyProps, response.getBytes());
-                        channel.basicAck(envelope.getDeliveryTag(), false);
-//                        System.out.println("[*] Publish response: "+response);
-                        LOG.info(" [*] PUBLISH RESPONSE: "+response);
+                        mChannel.basicPublish( "", replyProps.getReplyTo(), replyProps, response.getBytes());
+                        mChannel.basicAck(envelope.getDeliveryTag(), false);
+                        LOG.info(" [*] PUBLISH CALLBACK: "+response);
                     }
                 };
-                channel.basicConsume(SERVICE_QUEUE, false, consumer);
+                mChannel.basicConsume(SERVICE_QUEUE, false, consumer);
+
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-        } catch (IOException e) {
-            LOG.error("Something went wrong. Reason : " + e.getMessage(), e);
         }
     }
 
     private String SetOrder(RequestBody request) {
         //store to db
-        DBConnection db = new DBConnection(configuration.getMongoDBhost(), configuration.getMongoDBisAuth(), configuration.getMongoDBuser(), configuration.getMongoDBpassword(), configuration.getMongoDBname());
         db.connect();
         db.getCollection("order");
         Document doc = new Document();
@@ -112,13 +105,9 @@ public class OpangResource {
                     .correlationId(request.getIdUser())
                     .build();
 
-            Channel ch = connection.createChannel();
-            //ch.exchangeDeclare("semut.opang.order", "fanout", true);
-            //ch.basicPublish("semut.opang.order", "", null, message.getBytes());
             for(int i=0; i<request.getDrivers().size(); i++ ){
-//                System.out.println("[*] Send order to drivers: "+request.getDrivers().get(i));
                 LOG.info(" [*] Send order to drivers: "+request.getDrivers().get(i));
-                ch.basicPublish("", request.getDrivers().get(i), props, message.getBytes());
+                mChannel.basicPublish("", request.getDrivers().get(i), props, message.getBytes());
             }
 
         } catch (IOException e) {
@@ -131,7 +120,6 @@ public class OpangResource {
 
     private String SetBid(RequestBody request) {
         //store to db
-        DBConnection db = new DBConnection(configuration.getMongoDBhost(), configuration.getMongoDBisAuth(), configuration.getMongoDBuser(), configuration.getMongoDBpassword(), configuration.getMongoDBname());
         db.connect();
         db.getCollection("bid");
         Document doc = new Document();
@@ -157,10 +145,7 @@ public class OpangResource {
                     .type("bid")
                     .build();
 
-            Channel ch = connection.createChannel();
-            //ch.exchangeDeclare("semut.opang.bid", "fanout", true);
-            //ch.basicPublish("semut.opang.bid", "", props, message.getBytes("UTF-8"));
-            ch.basicPublish("", queueUser, props, message.getBytes("UTF-8"));
+            mChannel.basicPublish("", queueUser, props, message.getBytes("UTF-8"));
         } catch (IOException e) {
             LOG.error(this.getClass().getSimpleName()+" Something went wrong. Reason : " + e.getMessage(), e);
         }
