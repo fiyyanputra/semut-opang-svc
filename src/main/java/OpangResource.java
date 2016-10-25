@@ -32,7 +32,8 @@ public class OpangResource {
             connection = connectionFactory.newConnection();
             Channel channel = connection.createChannel();
 
-            System.out.println(" [x] Awaiting requests");
+            //System.out.println(" [x] Awaiting requests");
+            LOG.info(" [x] Awaiting requests");
 
             while (true) {
                 //consume serviceQueue
@@ -51,7 +52,8 @@ public class OpangResource {
                                 .type("callback")
                                 .build();
 
-                        System.out.println("[*] Consume request : "+message);
+                        //System.out.println("[*] Consume request : "+message);
+                        LOG.info(" [*] CONSUME REQUEST : "+message);
                         RequestBody request = common.buildParams(message);
                         String response = "";
                         switch (request.getProcess()) {
@@ -67,7 +69,8 @@ public class OpangResource {
 
                         channel.basicPublish( "", replyProps.getReplyTo(), replyProps, response.getBytes());
                         channel.basicAck(envelope.getDeliveryTag(), false);
-                        System.out.println("[*] Publish response: "+response);
+//                        System.out.println("[*] Publish response: "+response);
+                        LOG.info(" [*] PUBLISH RESPONSE: "+response);
                     }
                 };
                 channel.basicConsume(SERVICE_QUEUE, false, consumer);
@@ -106,13 +109,15 @@ public class OpangResource {
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .type("order")
+                    .correlationId(request.getIdUser())
                     .build();
 
             Channel ch = connection.createChannel();
             //ch.exchangeDeclare("semut.opang.order", "fanout", true);
             //ch.basicPublish("semut.opang.order", "", null, message.getBytes());
             for(int i=0; i<request.getDrivers().size(); i++ ){
-                System.out.println("[*] Send order to drivers: "+request.getDrivers().get(i));
+//                System.out.println("[*] Send order to drivers: "+request.getDrivers().get(i));
+                LOG.info(" [*] Send order to drivers: "+request.getDrivers().get(i));
                 ch.basicPublish("", request.getDrivers().get(i), props, message.getBytes());
             }
 
@@ -157,7 +162,7 @@ public class OpangResource {
             //ch.basicPublish("semut.opang.bid", "", props, message.getBytes("UTF-8"));
             ch.basicPublish("", queueUser, props, message.getBytes("UTF-8"));
         } catch (IOException e) {
-            LOG.error("Something went wrong. Reason : " + e.getMessage(), e);
+            LOG.error(this.getClass().getSimpleName()+" Something went wrong. Reason : " + e.getMessage(), e);
         }
 
         String response = "{\"status\": true,\"message\":\"tawaran diproses\"}";
