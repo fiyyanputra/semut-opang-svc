@@ -1,16 +1,18 @@
-import com.rabbitmq.client.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.Channel;
 import common.CommonApp;
-import config.Config;
-import db.DBConnection;
+import db.MongoDBConnection;
+import model.ResultProfile;
 import model.RequestBody;
 import org.bson.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import rabbit.ManagerRabbitMQ;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Locale;
 
 /**
@@ -18,60 +20,19 @@ import java.util.Locale;
  */
 public class OpangResource {
     private static final Logger LOG = LoggerFactory.getLogger(OpangResource.class);
-    private static final String EXCHANGE_NAME = "semut.opang";
-    private static final String SERVICE_QUEUE = "serviceQueue";
     private static final String ORDER_PROCESS = "07301";
     private static final String BID_PROCESS = "07302";
-    private DBConnection db;
+    private static final String ENDPOINT_URL = "http://167.205.7.226:65412/api/opank/getprofileojek";
+//    private static final String ENDPOINT_URL = "http://bsts-svc.lskk.ee.itb.ac.id/dev/api/opank/getprofileojek";
+    private MongoDBConnection db;
     private CommonApp common;
     private Channel mChannel;
+    private ObjectMapper mapper = new ObjectMapper();
 
-    public OpangResource(final Channel channel, final DBConnection dbConnection) {
+    public OpangResource(final Channel channel, final MongoDBConnection dbConnection) {
         this.common = new CommonApp();
         this.mChannel = channel;
         this.db = dbConnection;
-
-        LOG.info(" [*] WAITING REQUEST");
-        while(true){
-            try {
-                mChannel.exchangeDeclare(EXCHANGE_NAME, "topic", true);
-                mChannel.basicQos(1);
-                Consumer consumer = new DefaultConsumer(mChannel){
-                    @Override
-                    public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
-                                                String message = new String(body, "UTF-8");
-
-                        AMQP.BasicProperties replyProps = new AMQP.BasicProperties
-                                .Builder()
-                                .correlationId(properties.getCorrelationId())
-                                .replyTo(properties.getReplyTo())
-                                .type("callback")
-                                .build();
-
-                        LOG.info(" [*] CONSUME REQUEST : "+message);
-                        RequestBody request = common.buildParams(message);
-                        String response = "";
-                        switch (request.getProcess()) {
-                            case ORDER_PROCESS:
-                                response = SetOrder(request);
-                                break;
-                            case BID_PROCESS:
-                                response = SetBid(request);
-                                break;
-                            default:
-                                break;
-                        }
-                        mChannel.basicPublish( "", replyProps.getReplyTo(), replyProps, response.getBytes());
-                        mChannel.basicAck(envelope.getDeliveryTag(), false);
-                        LOG.info(" [*] PUBLISH CALLBACK: "+response);
-                    }
-                };
-                mChannel.basicConsume(SERVICE_QUEUE, false, consumer);
-
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
     }
 
     private String SetOrder(RequestBody request) {
@@ -98,12 +59,43 @@ public class OpangResource {
 
         //send notif to drivers
         try {
-            String message = "{\"order_id\": \""+orderID+"\",\"asal\": \"" + request.getAsal() + "\",\"tujuan\": \"" + request.getTujuan() + "\",\"lat_asal\": \"" + request.getLatAsal() + "\",\"long_asal\": \"" + request.getLongAsal() + "\",\"lat_tujuan\": \"" + request.getLatTujuan() + "\",\"long_tujuan\": \"" + request.getLongTujuan() + "\"}";
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .type("order")
                     .correlationId(request.getIdUser())
                     .build();
+
+            String userId = request.getIdUser();
+
+            //set params
+            HashMap<String, String> params = new HashMap<>();
+            params.put("Id_user_ojek", userId);
+
+            //set headers
+            HashMap<String, String> headers = new HashMap<>();
+            headers.put("API-KEY", "SEMUT_ANDROID");
+            headers.put("sessid", "0");
+            headers.put("deviceid", "1234567");
+
+            String response = common.sendRequest(ENDPOINT_URL, params, headers);
+            ResultProfile profile = mapper.readValue(response, ResultProfile.class);
+
+            String message = "{" +
+                    "\"order_id\": \""+orderID+"\"," +
+                    "\"asal\": \"" + request.getAsal() + "\"," +
+                    "\"tujuan\": \"" + request.getTujuan() + "\"," +
+                    "\"jarak\": \"" + request.getJarak() + "\"," +
+                    "\"lat_asal\": \"" + request.getLatAsal() + "\"," +
+                    "\"long_asal\": \"" + request.getLongAsal() + "\"," +
+                    "\"lat_tujuan\": \"" + request.getLatTujuan() + "\"," +
+                    "\"long_tujuan\": \"" + request.getLongTujuan() + "\"," +
+                    "\"nama\": \"" + (profile.getSuccess() ? profile.getProfile().getName(): "-") + "\"," +
+                    "\"id\": \"" + (profile.getSuccess() ? profile.getProfile().getID(): "-") + "\"," +
+                    "\"gender\": \"" + (profile.getSuccess() ? profile.getProfile().getGender(): "-") + "\"," +
+                    "\"phone\": \"" + (profile.getSuccess() ? profile.getProfile().getPhoneNumber(): "-") + "\"," +
+                    "\"poin\": \"" + (profile.getSuccess() ? profile.getProfile().getPoin(): "-") + "\"," +
+                    "\"poin_level\": \"" + (profile.getSuccess() ? profile.getProfile().getPoinlevel(): "-") + "\"" +
+                    "}";
 
             for(int i=0; i<request.getDrivers().size(); i++ ){
                 LOG.info(" [*] Send order to drivers: "+request.getDrivers().get(i));
@@ -139,7 +131,36 @@ public class OpangResource {
         try {
             String queueUser = "opang.user."+request.getIdUser();
 
-            String message = "{\"order_id\": \""+ request.getOrderId()+"\",\"id_user\": \"" + request.getIdUser() + "\",\"id_user_driver\": \"" + request.getIdDriver() + "\",\"lat_driver\": \"" + request.getLatDriver() + "\",\"long_driver\": \"" + request.getLongDriver() + "\",\"harga\": \"" + request.getHarga() + "}";
+            String driverId = request.getIdDriver();
+
+            //set params
+            HashMap<String, String> params = new HashMap<>();
+            params.put("Id_user_ojek", "422");
+
+            //set headers
+            HashMap<String, String> headers = new HashMap<>();
+            headers.put("API-KEY", "SEMUT_ANDROID");
+            headers.put("sessid", "0");
+            headers.put("deviceid", "1234567");
+
+            String response = common.sendRequest(ENDPOINT_URL, params, headers);
+            ResultProfile profile = mapper.readValue(response, ResultProfile.class);
+
+            String message = "{" +
+                    "\"order_id\": \""+ request.getOrderId()+"\"," +
+                    "\"id_user\": \"" + request.getIdUser() + "\"," +
+                    "\"id_user_driver\": \"" + request.getIdDriver() + "\"," +
+                    "\"lat_driver\": \"" + request.getLatDriver() + "\"," +
+                    "\"long_driver\": \"" + request.getLongDriver() + "\"," +
+                    "\"harga\": \"" + request.getHarga() + "\"," +
+                    "\"nama\": \"" + (profile.getSuccess() ? profile.getProfile().getName(): "-") + "\"," +
+                    "\"gender\": \"" + (profile.getSuccess() ? profile.getProfile().getGender(): "-") + "\"," +
+                    "\"phone\": \"" + (profile.getSuccess() ? profile.getProfile().getPhoneNumber(): "-") + "\"," +
+                    "\"plat_number\": \"" + (profile.getSuccess() ? profile.getProfile().getPlatMotor(): "-") + "\"," +
+                    "\"poin\": \"" + (profile.getSuccess() ? profile.getProfile().getPoin(): "-") + "\"," +
+                    "\"poin_level\": \"" + (profile.getSuccess() ? profile.getProfile().getPoinlevel(): "-") + "\"" +
+                    "}";
+
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .type("bid")
@@ -152,5 +173,18 @@ public class OpangResource {
 
         String response = "{\"status\": true,\"message\":\"tawaran diproses\"}";
         return response;
+    }
+
+
+    public String execute(RequestBody request) {
+        switch (request.getProcess()) {
+            case ORDER_PROCESS:
+                return SetOrder(request);
+            case BID_PROCESS:
+                return SetBid(request);
+            default:
+                return  "";
+
+        }
     }
 }

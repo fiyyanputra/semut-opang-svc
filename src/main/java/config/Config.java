@@ -1,20 +1,19 @@
 package config;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import db.MongoDBConnection;
+import io.codemonastery.dropwizard.rabbitmq.ConnectionFactory;
 import io.dropwizard.Configuration;
+
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
 
 /**
  * Created by fiyyanp on 10/13/2016.
  */
 public class Config extends Configuration{
     @JsonProperty
-    private String rabbitMQHost;
-    @JsonProperty
-    private String rabbitMQUsername;
-    @JsonProperty
-    private String rabbitMQPassword;
-    @JsonProperty
-    private String rabbitMQVHost;
+    private int numIndexingThreads;
     @JsonProperty
     private String mongoDBhost;
     @JsonProperty
@@ -25,42 +24,35 @@ public class Config extends Configuration{
     private String mongoDBpassword;
     @JsonProperty
     private String mongoDBname;
+    @Valid
+    @NotNull
+    private ConnectionFactory rabbitMq = new ConnectionFactory();
+    @Valid
+    @NotNull
+    private MongoDBConnection mongoDb = new MongoDBConnection();
 
     /* getter */
-    public String getRabbitMQHost() {
-        return rabbitMQHost;
+    public ConnectionFactory getRabbitMq() {
+        return rabbitMq;
     }
 
-    public String getRabbitMQUsername() {
-        return rabbitMQUsername;
+    public void setRabbitMq(ConnectionFactory rabbitMq) {
+        this.rabbitMq = rabbitMq;
     }
 
-    public String getRabbitMQPassword() {
-        return rabbitMQPassword;
+    public MongoDBConnection getMongoDb() {
+        return mongoDb;
     }
 
-    public String getRabbitMQVHost() {
-        return rabbitMQVHost;
+    public void setMongoDb(MongoDBConnection mongoDb) {
+        this.mongoDb = mongoDb;
     }
 
-    public String getMongoDBhost() {
-        return mongoDBhost;
+    public int getNumIndexingThreads() {
+        return numIndexingThreads;
     }
 
-    public Boolean getMongoDBisAuth() {
-        return mongoDBisAuth;
+    public void setNumIndexingThreads(int numIndexingThreads) {
+        this.numIndexingThreads = numIndexingThreads;
     }
-
-    public String getMongoDBuser() {
-        return mongoDBuser;
-    }
-
-    public String getMongoDBpassword() {
-        return mongoDBpassword;
-    }
-
-    public String getMongoDBname() {
-        return mongoDBname;
-    }
-
 }
