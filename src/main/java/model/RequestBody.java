@@ -62,7 +62,10 @@ public class RequestBody {
     public String orderId;
     @JsonProperty("drivers")
     private List<String> drivers = new ArrayList<String>();
-
+    @JsonProperty("estimasi")
+    public String estimasi;
+    @JsonProperty("estimasi_waktu")
+    public String estimasiWaktu;
 
     /**
      *
@@ -290,5 +293,21 @@ public class RequestBody {
 
     public void setDrivers(List<String> drivers) {
         this.drivers = drivers;
+    }
+
+    public String getEstimasi() {
+        return estimasi;
+    }
+
+    public void setEstimasi(String estimasi) {
+        this.estimasi = estimasi;
+    }
+
+    public String getEstimasiWaktu() {
+        return estimasiWaktu;
+    }
+
+    public void setEstimasiWaktu(String estimasiWaktu) {
+        this.estimasiWaktu = estimasiWaktu;
     }
 }
