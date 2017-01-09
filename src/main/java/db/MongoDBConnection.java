@@ -25,7 +25,7 @@ public class MongoDBConnection extends MongoConfiguration{
     public void connect(){
         ServerAddress serverAddress = new ServerAddress(getHost(), 27017);
         if(isAuth()){
-            MongoCredential credential = MongoCredential.createPlainCredential(getUser(), getDbName(), getPassword().toCharArray());
+            MongoCredential credential = MongoCredential.createScramSha1Credential(getUser(), getDbName(), getPassword().toCharArray());
             List<MongoCredential> auths = new ArrayList<MongoCredential>();
             auths.add(credential);
             mongoClient = new MongoClient(serverAddress, auths);
